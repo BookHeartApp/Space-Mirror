@@ -1,0 +1,73 @@
+package com.bogomolov.spacemirror.presentation.viewmodel.apod
+
+import android.os.Build
+import androidx.annotation.RequiresApi
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.bogomolov.spacemirror.data.removed.apod.APODImpl
+import com.bogomolov.spacemirror.presentation.model.apod.Day
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.ZoneId
+
+private const val NASA_TIME_ZONE = "America/Los_Angeles"
+
+class APODViewModel(
+    private val liveStateForViewToObserve: MutableLiveData<APODState> = MutableLiveData(),
+    private val apodImpl: APODImpl = APODImpl()
+) : ViewModel() {
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun getDataToday(): LiveData<APODState> {
+        sendServerRequest(Day.TODAY)
+        return liveStateForViewToObserve
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun getDataYesterday(): LiveData<APODState> {
+        sendServerRequest(Day.YESTERDAY)
+        return liveStateForViewToObserve
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun getDataDayBeforeYesterday(): LiveData<APODState> {
+        sendServerRequest(Day.DAY_BEFORE_YESTERDAY)
+        return liveStateForViewToObserve
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun sendServerRequest(day: Day) {
+        viewModelScope.launch(Dispatchers.IO) {
+            liveStateForViewToObserve.postValue(APODState.Loading(null))
+            try {
+                val NASA_API_KEY = "mxtTTvxv3wYq12VzlAYJU0vKfW2KlfqdA6tB0iPT"
+                val response =
+                    apodImpl.getAPODImpl().getAPOD(getDate(day), NASA_API_KEY)
+                if (response.isSuccessful && response.body() != null) {
+                    liveStateForViewToObserve.postValue(APODState.Success(response.body()!!))
+                } else {
+                    if (response.message().isNullOrEmpty()) {
+                        liveStateForViewToObserve.postValue(APODState.Error(Throwable("Unidentified error")))
+                    } else {
+                        liveStateForViewToObserve.postValue(APODState.Error(Throwable(response.message())))
+                    }
+                }
+            } catch (e: Exception) {
+                liveStateForViewToObserve.postValue(APODState.Error(e))
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun getDate(day: Day): String {
+        val todayInUSA = LocalDate.now(ZoneId.of(NASA_TIME_ZONE))
+        return when (day) {
+            Day.TODAY -> todayInUSA.toString()
+            Day.YESTERDAY -> todayInUSA.minusDays(1).toString()
+            Day.DAY_BEFORE_YESTERDAY -> todayInUSA.minusDays(2).toString()
+        }
+    }
+}
